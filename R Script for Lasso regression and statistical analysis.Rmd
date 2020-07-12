@@ -1,0 +1,207 @@
+---
+title: "Variables(diagnosis, medication) and Lasso Script"
+author: "Martin Nwadiugwu"
+date: "3/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#reading diagnosis for eligible patients
+smaller.wide <- read.csv("DiagnosisAndCV.csv",row.names=1)
+#reading demographic and medication data
+demography <- read.csv ("demo.csv")
+Med <- read.csv("medcodeCount.csv")
+#combining diagnosis and demographic data into one file
+variables.lasso <- cbind(smaller.wide, 
+                       demography[match(rownames(smaller.wide),demography$UPI),c(2,4,5,6)])
+#combining diagnosis, demographic and medication data into one file
+variables.lasso1 <- cbind(variables.lasso, 
+                       Med[match(rownames(variables.lasso),Med$UPI),c(13)])
+names(variables.lasso1) [names(variables.lasso1) =="Med[match(rownames(variables.lasso), Med$UPI), c(13)]"] <- "Medcount" 
+
+martin <- rowSums(data.matrix(variables.lasso1))
+length(which(is.na(martin)))
+variables.lasso.new <- na.omit(variables.lasso1)
+
+#Applying a threshold that selects only data with diagnosis codes occuring in 10% (326 patients) of data
+variables.lasso.counts <- apply(variables.lasso.new[,1:1095],2,function(x)sum(as.numeric(x)))
+variables.lasso.newer <- variables.lasso.new[,which(variables.lasso.counts >= 326)]
+
+variables.lasso.newest <- cbind(variables.lasso.newer, 
+                       variables.lasso.new[match(rownames(variables.lasso.newer),rownames(variables.lasso.new)),c(1096,1097, 1101)])
+
+#Changing a column name from medcount to No. of Medication and optionally diagnosis codes to ICD-10 explanation
+
+colnames(variables.lasso.newest) <- gsub("Medcount","No._of_Medication",colnames(variables.lasso.newest))
+
+colnames(variables.lasso.newest) <- gsub("E11","Type2Diabetes(E11)",colnames(variables.lasso.newest))
+
+colnames(variables.lasso.newest) <- gsub("B37","Candidiasis(B37)",colnames(variables.lasso.newest))
+
+colnames(variables.lasso.newest) <- gsub("R60","EdemaNotElsewhereClassified(R60)",colnames(variables.lasso.newest))
+
+colnames(variables.lasso.newest) <- gsub("D64","OtherAnemias(D64)",colnames(variables.lasso.newest))
+
+colnames(variables.lasso.newest) <- gsub("E87","OtherDisordersOfFluid,Electrolyte,Acid-base(E87)",colnames(variables.lasso.newest))
+
+colnames(variables.lasso.newest) <- gsub("N52","MaleErectileDysfunctionDiagnosis(N52)",colnames(variables.lasso.newest))
+
+colnames(variables.lasso.newest) <- gsub("L03","Cellulitis&AcuteLymphangitisDiagnosis(L03)",colnames(variables.lasso.newest))
+
+colnames(variables.lasso.newest) <- gsub("Z01","EncounterForSuspectedOrReportedDiagnosis(Z01)",colnames(variables.lasso.newest))
+
+colnames(variables.lasso.newest) <- gsub("B35","Dermatophytosis(B35)",colnames(variables.lasso.newest))
+
+colnames(variables.lasso.newest) <- gsub("N18","ChronicKidneyDisease(N18)",colnames(variables.lasso.newest))
+
+colnames(variables.lasso.newest) <- gsub("R79","AbnormalFindingsOnBloodChemistry(R79)",colnames(variables.lasso.newest))
+
+colnames(variables.lasso.newest) <- gsub("Z51","EncounterForOtherOuter,MedicalCare(Z51)",colnames(variables.lasso.newest))
+
+colnames(variables.lasso.newest) <- gsub("Z79","PersonalRisk,notClassifiedElsewhere(Z79)",colnames(variables.lasso.newest))
+
+colnames(variables.lasso.newest) <- gsub("Z91","LongTerm(current)drugTherapy(Z91)",colnames(variables.lasso.newest))
+
+colnames(variables.lasso.newest) <- gsub("Z13","ScreeningForOtherDisorders(Z13)",colnames(variables.lasso.newest))
+
+colnames(variables.lasso.newest) <- gsub("M85","DisordersOfBoneDensity(M85)",colnames(variables.lasso.newest))
+
+colnames(variables.lasso.newest) <- gsub("R73","ElevatedBloodGlucose(R73)",colnames(variables.lasso.newest))
+
+colnames(variables.lasso.newest) <- gsub("Z00","EncounterForGeneralExamination(Z00)",colnames(variables.lasso.newest))
+
+colnames(variables.lasso.newest) <- gsub("Z12","ScreeningForMalignantNeoplasm(Z12)",colnames(variables.lasso.newest))
+
+colnames(variables.lasso.newest) <- gsub("E78","DisordersOfLipoprotein(E78)",colnames(variables.lasso.newest))
+colnames(variables.lasso.newest) <- gsub("M15","Osteoarthritis(M15)",colnames(variables.lasso.newest))
+colnames(variables.lasso.newest) <- gsub("E55","VitaminDdifficiency(E55)",colnames(variables.lasso.newest))
+
+
+print(summary(variables.lasso.newest$age))
+
+#Making age a continious variable
+variables.lasso.newest$age <- as.numeric(variables.lasso.newest$age)
+print(summary(variables.lasso.newest$age))
+
+
+#Lasso regression 
+
+library(glmnet)
+library(data.table)
+library(ggplot2)
+
+x <- model.matrix(cov~ . , data = variables.lasso.newest) # note: the -1 specifies that we leave out the first column, which is y
+
+y <- variables.lasso.newest$cov
+
+# second, we find the 'best' level of lambda
+
+cv <- cv.glmnet(x,y, alpha = 1)
+
+# cross validation plot 
+plot(cv) 
+
+#adding aesthetics on cross validation plot
+legend("topleft", legend=c("Cross validation"), pch="*", col = c("red"))
+
+#selecting the best lamda
+Min_Err_lambda <- cv$lambda.min
+
+#using the best lambda from previous steps
+lasso <- glmnet(x, y, alpha = 1, lambda = Min_Err_lambda)
+
+
+#Making a ggplot that shows the Lasso predictors
+
+fit = glmnet(x, y, alpha = 1, lambda = Min_Err_lambda)
+Lasso.var <-(lasso$beta[,1])
+Lasso.new.var<- data.frame(Lasso.var[Lasso.var!=0])
+Lasso.new.var<- data.frame(Lasso.var[Lasso.var!=0], rownames(Lasso.new.var))
+colnames(Lasso.new.var) <- gsub("Lasso.var.Lasso.var....0.","Coefficients",colnames(Lasso.new.var))
+colnames(Lasso.new.var) <- gsub("rownames.Lasso.new.var.","Variables",colnames(Lasso.new.var))
+to_plot = reshape2::melt(Lasso.new.var, id.vars='Variables', value.name='Lasso_coefficients')
+
+ggplot(to_plot, aes(x=Variables, y=Lasso_coefficients))+coord_flip()+geom_bar(stat='identity') + guides(fill=FALSE)
+
+#printing out the beta coefficients
+(coefficients <- coef(lasso))
+
+#printing out the non-zero coefficients 
+coefficients [(coef(lasso)) !=0]
+lasso.max <- coef(lasso)[which(coef(lasso)[,1]!=0),]
+
+#geting the r squared for the best lambda:
+lasso$dev.ratio
+
+
+
+#### for finding best lambda within 1 Standard mean error
+cv <- cv.glmnet(x, y, alpha = 1)
+plot(cv) # plot how lambda affects the outcome
+best_lambda <- cv$lambda.1se
+
+# We use the best lambda from before 
+lasso <- glmnet(x, y, alpha = 1, lambda = best_lambda)
+
+# and print out the beta coefficients
+(coefficients <- coef(lasso))
+
+# you can also just print out the non-zero coefficients 
+coefficients [(coef(lasso)) !=0]
+lasso.max <- coef(lasso)[which(coef(lasso)[,1]!=0),]
+
+# note: we can get the r squared like this:
+lasso$dev.ratio
+
+
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+#creating dataframe for Kruskal Wallis statistical analysis which was done in SPSS
+
+install.packages("mvnormtest")
+library(mvnormtest)
+Normality <- data.frame(variables.lasso.newest$age, variables.lasso.newest$Medcount, variables.lasso.newest$cov, variables.lasso.newest$Z00, variables.lasso.newest$R73, variables.lasso.newest$Z12, variables.lasso.newest$race, variables.lasso.newest$E78, variables.lasso.newest$M15, variables.lasso.newest$E55, variables.lasso.newest$Z13, variables.lasso.newest$M85, variables.lasso.newest$Z91, variables.lasso.newest$Z79, variables.lasso.newest$Z91, variables.lasso.newest$age, variables.lasso.newest$Z51, variables.lasso.newest$N18, variables.lasso.newest$B35, variables.lasso.newest$Z01, variables.lasso.newest$L03, variables.lasso.newest$N52, variables.lasso.newest$E87, variables.lasso.newest$D64, variables.lasso.newest$R60, variables.lasso.newest$B37, variables.lasso.newest$E11)
+
+
+#2 Testing positive determinants of variance-covariance Matrix Assumption
+
+CovNormality <- cov(Normality)
+det(CovNormality)
+
+# Testing Equality of variance-covariance matrices of Groups
+
+group <- rep(c("Cohort1", "Cohort2", "Cohort3", "Cohort4"), c(0:10, >10:20, >20:30, >30))
+factor(group)
+group
+
+install.packages("biotools")
+library(biotools)
+boxM(Normality, group)
+
+# Testing for independednce assumption
+
+install.packages("psych")
+library(psych)
+ICC(Normality)
+
+#creating new bins
+cv <- Normality$variables.lasso.newest.cov
+cut(cv, 4, breaks=c(0,10,20,30, 50), labels =c("cohort1", "cohort2", "cohort3","cohort4"))
+Normality$variables.lasso.newest.cov <- cut(cv, 4, breaks=c(0,10,20,30, 50), labels =c("cohort1", "cohort2", "cohort3","cohort4"))
+
+
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
